@@ -1,0 +1,66 @@
+import os
+import logging
+import openai
+from langdetect import detect
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    MessageHandler,
+    CommandHandler,
+    ContextTypes,
+    filters
+)
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+logging.basicConfig(level=logging.INFO)
+
+PROMPTS = {
+    "ru": """
+Ты — исламский толкователь снов в духе Шихаба аль-‘Абира. Используй Коран, Сунну, этимологию, притчи и богобоязненность. Толкуй следующий сон:
+
+{dream}
+""",
+    "en": """
+You are an Islamic dream interpreter in the style of Shihab al-‘Abir. Use Qur'an, Sunnah, Arabic etymology, and parables. Interpret the following dream:
+
+{dream}
+""",
+    "ar": """
+أنت مفسر أحلام إسلامي على نهج شهاب العابر. استخدم القرآن، السنة، دلالة الكلمات، والأمثال. فسر هذا المنام:
+
+{dream}
+"""
+}
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Ассаляму алейкум! Напиши мне свой сон — и я истолкую его по исламской традиции.")
+
+async def interpret(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+    try:
+        lang = detect(user_text)
+    except:
+        lang = "en"
+    prompt = PROMPTS.get(lang, PROMPTS["en"]).format(dream=user_text)
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=700,
+            temperature=0.7
+        )
+        interpretation = response.choices[0].message.content.strip()
+    except Exception as e:
+        interpretation = "Произошла ошибка при толковании." if lang == "ru" else "An error occurred."
+    await update.message.reply_text(interpretation)
+
+def main():
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), interpret))
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
